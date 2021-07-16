@@ -37,9 +37,9 @@ patch_mem(uintptr_t addr, const char *buf, unsigned num_bytes)
 	int i;
 
 	for (i = 0; i < num_bytes; i++) {
-		snprintf(tmp + tmplen, MAX(0, sizeof(tmp) - tmplen), "0x%x ", (unsigned char)buf[i]);
+		tmplen += snprintf(tmp + tmplen, MAX(0, sizeof(tmp) - tmplen), "0x%x ", (unsigned char)buf[i]);
 	}
-	fprintf(stderr, "patching %d bytes at 0x%x: %s", num_bytes, addr, tmp);
+	fprintf(stderr, "patching %d bytes at 0x%x: %s\n", num_bytes, addr, tmp);
 
 	mprotect(page, mprot_bytes, PROT_READ | PROT_WRITE);
 	memcpy((void *)addr, buf, num_bytes);
@@ -160,6 +160,11 @@ init(void)
 	 * is done and all players around you see you at your real location) */
 	patch_mem(0x80bad6d, "\x66\x90", 2);
 	patch_mem(0x80bad72, "\x01\x00\x00\x00", 4);
+
+	/* decrease action delay after player movement */
+	patch_mem(0x80bb027, "\xeb", 1);
+	patch_mem(0x80bb01a, "\x66\x90", 2);
+	patch_mem(0x80bb01f, "\x01", 1);
 
 	/* add expiration time to items */
 	trampoline_fn((void **)&org_generate_item_for_drop_fn, 6, generate_item_for_drop);
