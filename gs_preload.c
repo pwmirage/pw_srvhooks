@@ -20,12 +20,23 @@
 #include <assert.h>
 #include <sys/mman.h>
 #include <assert.h>
+#include <math.h>
+
+#include "common.h"
+#include "avl.h"
+#include "cjson.h"
+#include "cjson_ext.h"
 
 #define PAGE_SIZE 4096
+#define MIRAGE_CELESTONE_ID 11208
 
 #ifndef MAX
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #endif
+
+#define __cdecl __attribute__((__cdecl__))
+#define __thiscall __attribute__((__thiscall__))
+#define __stdcall __attribute__((__stdcall__))
 
 static void
 patch_mem(uintptr_t addr, const char *buf, unsigned num_bytes)
@@ -59,6 +70,30 @@ u32_to_str(char *buf, uint32_t u32)
 	buf[1] = u.c[1];
 	buf[2] = u.c[2];
 	buf[3] = u.c[3];
+}
+
+void
+patch_mem_u32(uintptr_t addr, uint32_t u32)
+{
+	union {
+		char c[4];
+		uint32_t u;
+	} u;
+
+	u.u = u32;
+	patch_mem(addr, u.c, 4);
+}
+
+void
+patch_jmp32(uintptr_t addr, uintptr_t fn)
+{
+	uint8_t op = *(char *)addr;
+	if (op != 0xe9 && op != 0xe8) {
+		fprintf(stderr, "Opcode %X at 0x%x is not a valid JMP/CALL", op, addr);
+		return;
+	}
+
+	patch_mem_u32(addr + 1, fn - addr - 5);
 }
 
 void
@@ -135,6 +170,124 @@ generate_item_from_player(void *this, unsigned param_1, void *param_2, unsigned 
 	return ret;
 }
 
+static void __cdecl (*MSG)(char *buf) = (void *)0x806271c;
+
+static void * (*get_server_xid)(void) = (void *)0x80a4272;
+
+static void __cdecl (*build_message)(void *msg, int message, void *target_xid, void *source_xid, float pos[3], int param, void *content, size_t content_length) = (void *)0x806275a;
+
+static void __cdecl (*post_lazy_message)(void *world, void *msg) = (void *)0x80885b0;
+
+static unsigned __cdecl (*get_npc_id)(void *gnpc_imp) = (void *)0x80a41c0;
+
+static void __cdecl (*org_gnpc_imp_drop_item_fn)(void *gnpc_imp, void *killer_xid, int player_lvl, int team_id, int team_seq, int wallow_level) = (void *)0x80a241a;
+
+/* it's actually a cdecl, but we don't want to clean the stack in our hook */
+static bool __stdcall (*org_gnpc_imp_drop_item_from_global_fn)(void *gnpc_imp, void *killer_xid, int player_lvl, int team_id, int team_seq, int wallow_level) = (void *)0x80a1da2;
+
+/* rand 0.0 to 1.0 */
+static double (*rand_uniform)(void) = (void *)0x8087276;
+
+struct pw_avl *g_mirages_per_mob;
+
+struct mirages_per_mob {
+	unsigned id;
+	int min;
+	int max;
+};
+
+static bool __cdecl
+hooked_gnpc_imp_drop_item_from_global_fn(void *gnpc_imp, void *killer_xid, int player_lvl,
+		int team_id, int team_seq, int wallow_level)
+{
+	char msg[48];
+	int dropped_items[36];
+	unsigned mob_id = get_npc_id(gnpc_imp);
+
+	struct mirages_per_mob *mg = pw_avl_get(g_mirages_per_mob, mob_id);
+	while (mg && mg->id != mob_id) {
+		mg = pw_avl_get_next(g_mirages_per_mob, mg);
+	}
+
+	if (mg) {
+		int count = mg->min + round(rand_uniform() * (mg->max - mg->min));
+		int i;
+		float *pos;
+		void *world;
+
+		assert(count <= 32);
+
+		for (i = 0; i < count; i++) {
+			dropped_items[4 + i] = MIRAGE_CELESTONE_ID;
+		}
+
+		dropped_items[0] = team_id;
+		dropped_items[1] = team_seq;
+		dropped_items[2] = mob_id;
+		dropped_items[3] = count;
+
+		pos = (float *)(*(int *)(gnpc_imp + 8) + 0x20);
+		world = *(void **)(gnpc_imp + 4);
+
+		MSG(msg);
+		build_message(msg, 0x53, get_server_xid(), killer_xid, pos, 0, dropped_items, (count + 4) * sizeof(int));
+		post_lazy_message(world, msg);
+	}
+
+	
+
+	return org_gnpc_imp_drop_item_from_global_fn(gnpc_imp, killer_xid, player_lvl, team_id, team_seq, wallow_level);
+}
+
+static void
+hook_mirage_boss_drops(void)
+{
+	char *buf;
+	size_t buflen;
+	int i, rc;
+	struct cjson *cjson;
+
+	g_mirages_per_mob = pw_avl_init(sizeof(struct mirages_per_mob));
+	if (!g_mirages_per_mob) {
+		fprintf(stderr, "pw_avl_init() failed\n");
+		return;
+	}
+
+	rc = readfile("boss_drops.json", &buf, &buflen);
+	if (rc != 0) {
+		fprintf(stderr, "Failed to read boss drops: %d\n", -rc);
+		return;
+	}
+
+	cjson = cjson_parse(buf);
+	if (!cjson) {
+		fprintf(stderr, "cjson_parse() failed\n");
+		free(buf);
+		return;
+	}
+
+	for (i = 0; i < cjson->count; i++) {
+		struct cjson *drop = JS(cjson, i);
+		struct mirages_per_mob *map;
+		int id;
+
+		map = pw_avl_alloc(g_mirages_per_mob);
+		if (!map) {
+			fprintf(stderr, "pw_avl_alloc() failed\n");
+			/* TODO cleanup */
+			return;
+		}
+
+		id = JSi(drop, "id");
+		map->id = id;
+		map->min = JSi(drop, "min");
+		map->max = JSi(drop, "max");
+		pw_avl_insert(g_mirages_per_mob, id, map);
+	}
+
+	patch_jmp32(0x80a2435, (uintptr_t)hooked_gnpc_imp_drop_item_from_global_fn);
+}
+
 static void __attribute__((constructor))
 init(void)
 {
@@ -169,6 +322,8 @@ init(void)
 	/* add expiration time to items */
 	trampoline_fn((void **)&org_generate_item_for_drop_fn, 6, generate_item_for_drop);
 	trampoline_fn((void **)&org_generate_item_from_player_fn, 6, generate_item_from_player);
+
+	hook_mirage_boss_drops();
 
 	fprintf(stderr, "gs_preload done\n");
 }

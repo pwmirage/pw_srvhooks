@@ -1,4 +1,4 @@
-OBJECTS =
+OBJECTS = avl.o cjson.o common.o
 ALL_OBJECTS := $(OBJECTS) gs_preload.o
 CFLAGS := -O0 -g -MD -MP -fPIC -m32 -fno-strict-aliasing -Wall -Wno-format-truncation $(CFLAGS)
 
