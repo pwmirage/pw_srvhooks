@@ -297,9 +297,26 @@ hooked_on_banish(int role_id)
 	system(tmp);
 }
 
+extern char **environ;
+
+static void
+unset_preload(void)
+{
+	int i;
+	for (i = 0; environ[i]; i++) {
+		if (strstr(environ[i],"LD_PRELOAD="))
+		{
+			environ[i][0] = 'D';
+		}
+	}
+}
+
 static void __attribute__((constructor))
 init(void)
 {
+	/* don't hook into children */
+	unset_preload();
+
 	/* don't forbid logging characters wth too many stats */
 	patch_mem(0x81398bc, "\x31\xc0\x40\x90", 4);
 
