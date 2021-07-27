@@ -288,6 +288,15 @@ hook_mirage_boss_drops(void)
 	patch_jmp32(0x80a2435, (uintptr_t)hooked_gnpc_imp_drop_item_from_global_fn);
 }
 
+static void __stdcall
+hooked_on_banish(int role_id)
+{
+	char tmp[1024];
+
+	snprintf(tmp, sizeof(tmp), "/bin/bash /home/pw/gamed/banish.sh %d", role_id);
+	system(tmp);
+}
+
 static void __attribute__((constructor))
 init(void)
 {
@@ -337,6 +346,17 @@ init(void)
 	patch_mem(0x80bb36d, "\x83\xe8\x05", 3); /* atk time (EAX) -= 5 */
 	patch_mem(0x80bb370, "\x89\x45\xd0", 3); /* store it */
 	patch_mem(0x80bb373, "\xeb\x1f", 2); /* skip the rest of overritten code (assert) */
+
+	/* kick instead of banish */
+	patch_mem(0x80e3f0a, "\x89\xc7", 2); /* save player id from EAX EDI */
+	patch_mem(0x80e3f0c, "\xe8\xe7\x0f\x42\x00", 5); /* move GLog call */
+	patch_mem(0x80e3f11, "\x83\xc4\x08\x90", 4);
+	patch_mem(0x80e3ee4, "\xe8\x03", 2); /* increase load limit 2x */
+	patch_mem(0x80e3f15, "\xff\x77\x30", 3);
+	patch_mem(0x80e3f18, "\xe8", 1);
+	patch_jmp32(0x80e3f18, hooked_on_banish);
+	patch_mem(0x80e3f1d, "\x83\xc4\x08", 3);
+	patch_mem(0x80e3f20, "\xeb\x07", 2);
 
 	/* add expiration time to items */
 	trampoline_fn((void **)&org_generate_item_for_drop_fn, 6, generate_item_for_drop);
