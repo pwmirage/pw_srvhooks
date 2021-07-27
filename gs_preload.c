@@ -319,6 +319,25 @@ init(void)
 	patch_mem(0x80bb01a, "\x66\x90", 2);
 	patch_mem(0x80bb01f, "\x01", 1);
 
+	/* boost skill casting */
+	patch_mem(0x80bbd04, "\x01", 1);
+	patch_mem(0x80bb7bf, "\x06", 1);
+	patch_mem(0x80bb9ea, "\x06", 1);
+	patch_mem(0x80bbbd3, "\x06", 1);
+
+	/* boost normal atk */
+	patch_mem(0x80bb224, "\x7c", 1);
+	patch_mem(0x80bb223, "\x06", 1);
+	patch_mem(0x80bb226, "\x83\xe8\x05", 3); /* atk time (EAX) -= 5 */
+	patch_mem(0x80bb229, "\x89\x45\xf0", 3); /* store it */
+	patch_mem(0x80bb22c, "\xeb\x1f", 2); /* skip the rest of overritten code (assert) */
+
+	patch_mem(0x80bb36b, "\x7c", 1);
+	patch_mem(0x80bb36a, "\x06", 1);
+	patch_mem(0x80bb36d, "\x83\xe8\x05", 3); /* atk time (EAX) -= 5 */
+	patch_mem(0x80bb370, "\x89\x45\xd0", 3); /* store it */
+	patch_mem(0x80bb373, "\xeb\x1f", 2); /* skip the rest of overritten code (assert) */
+
 	/* add expiration time to items */
 	trampoline_fn((void **)&org_generate_item_for_drop_fn, 6, generate_item_for_drop);
 	trampoline_fn((void **)&org_generate_item_from_player_fn, 6, generate_item_from_player);
