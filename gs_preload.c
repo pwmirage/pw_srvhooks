@@ -260,14 +260,10 @@ hooked_gnpc_imp_drop_item_from_global_fn(void *gnpc_imp, void *killer_xid, int p
 static uintptr_t
 hooked_pile_items_on_move(void)
 {
-	struct pw_item *src, *dst;
-
-	__asm__ (
-		"push edx;"
-		"mov %0, eax;"
-		"mov %1, dword ptr [esp];"
-		"add esp, 4;"
-		: "=r"(src), "=r"(dst));
+	register struct pw_item *_src asm ("eax");
+	register struct pw_item *_dst asm ("edx");
+	/* we force src and dst into the stack this way */
+	struct pw_item *src = _src, *dst = _dst;
 
 	if (src->type == dst->type && src->proc_type == dst->proc_type) {
 		return 0x808b948;
