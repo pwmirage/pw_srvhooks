@@ -38,6 +38,24 @@
 #define __thiscall __attribute__((__thiscall__))
 #define __stdcall __attribute__((__stdcall__))
 
+struct pw_item {
+	uint32_t type;
+	uint32_t count;
+	uint32_t pile_limit;
+	uint32_t equip_mask;
+	uint32_t proc_type;
+	uint32_t classid;
+	struct
+	{
+		uint32_t guid1;
+		uint32_t guid2;
+	} guid;
+	uint32_t price;
+	uint32_t expire_date;
+	uint32_t content_length;
+	char *item_content;
+};
+
 static void
 patch_mem(uintptr_t addr, const char *buf, unsigned num_bytes)
 {
@@ -239,6 +257,45 @@ hooked_gnpc_imp_drop_item_from_global_fn(void *gnpc_imp, void *killer_xid, int p
 	return org_gnpc_imp_drop_item_from_global_fn(gnpc_imp, killer_xid, player_lvl, team_id, team_seq, wallow_level);
 }
 
+static uintptr_t
+hooked_pile_items_on_move(void)
+{
+	struct pw_item *src, *dst;
+
+	__asm__ (
+		"push edx;"
+		"mov %0, eax;"
+		"mov %1, dword ptr [esp];"
+		"add esp, 4;"
+		: "=r"(src), "=r"(dst));
+
+	if (src->type == dst->type && src->proc_type == dst->proc_type) {
+		return 0x808b948;
+	} else {
+		return 0x808b95d;
+	}
+}
+
+static uintptr_t
+hooked_pile_items(void)
+{
+	struct pw_item *src, *dst;
+
+	__asm__ (
+		"push dword ptr [edx + 0xc];"
+		"mov %0, dword ptr [edx - 0x10];"
+		"mov %1, dword ptr [esp];"
+		"add esp, 4;"
+		: "=r"(src), "=r"(dst));
+
+	if (src->type == dst->type && src->proc_type == dst->proc_type) {
+		return 0x80b861a;
+	} else {
+		return 0x80b8704;
+	}
+}
+
+
 static void
 hook_mirage_boss_drops(void)
 {
@@ -345,22 +402,45 @@ init(void)
 	patch_mem(0x80bb01a, "\x66\x90", 2);
 	patch_mem(0x80bb01f, "\x01", 1);
 
+	/* don't stack items with different proc_type */
+	void *tmp = calloc(1, 0x1000);
+	assert(tmp);
+	memcpy(tmp, "\xe8\x00\x00\x00\x00\xff\xe0", 7);
+	u32_to_str(tmp + 1, (uintptr_t)hooked_pile_items_on_move - (uintptr_t)tmp - 5);
+	patch_mem(0x808b942, "\xe9\x00\x00\x00\x00\x90", 6);
+	patch_jmp32(0x808b942, (uintptr_t)tmp);
+
+	/* ^ on pickup */
+	patch_mem(0x80b7aaa, "\x67\x50", 2); /* mov eax instead of [eax] (id) */
+	patch_mem(0x80b7d29, "\x67\x50", 2);
+	patch_mem(0x80b85d8, "\x66\x90", 2);
+	patch_mem(0x80b85dd, "\x83\x3c\x20\xff", 4);
+	patch_mem(0x80b860e, "\x8b\xd5", 2); /* mov edx, ebp */
+	patch_mem(0x80b8610, "\xe8\x00\x00\x00\x00\xff\xe0\x90\x90\x90", 10);
+	patch_jmp32(0x80b8610, (uintptr_t)hooked_pile_items);
+
+	/* send items' proc_type directly to the client */
+	//patch_mem(0x8091018, "\x8b\x40\x10", 3);
+	//patch_mem(0x809101b, "\x90\x90\x90\x90\x90", 5);
+	//patch_mem(0x8091022, "\x08", 1);
+	patch_mem(0x8096dd9, "\x8b\x45\x08\xc9\xc3", 5); /* mov eax,param1; leave; ret */
+
 	/* boost skill casting */
 	patch_mem(0x80bbd04, "\x01", 1);
-	patch_mem(0x80bb7bf, "\x06", 1);
-	patch_mem(0x80bb9ea, "\x06", 1);
-	patch_mem(0x80bbbd3, "\x06", 1);
+	//patch_mem(0x80bb7bf, "\x06", 1);
+	//patch_mem(0x80bb9ea, "\x06", 1);
+	//patch_mem(0x80bbbd3, "\x06", 1);
 
 	/* boost normal atk */
 	patch_mem(0x80bb224, "\x7c", 1);
-	patch_mem(0x80bb223, "\x06", 1);
-	patch_mem(0x80bb226, "\x83\xe8\x05", 3); /* atk time (EAX) -= 5 */
+	patch_mem(0x80bb223, "\x02", 1);
+	patch_mem(0x80bb226, "\x83\xe8\x01", 3); /* atk time (EAX) -= 1 */
 	patch_mem(0x80bb229, "\x89\x45\xf0", 3); /* store it */
 	patch_mem(0x80bb22c, "\xeb\x1f", 2); /* skip the rest of overritten code (assert) */
 
 	patch_mem(0x80bb36b, "\x7c", 1);
-	patch_mem(0x80bb36a, "\x06", 1);
-	patch_mem(0x80bb36d, "\x83\xe8\x05", 3); /* atk time (EAX) -= 5 */
+	patch_mem(0x80bb36a, "\x02", 1);
+	patch_mem(0x80bb36d, "\x83\xe8\x01", 3); /* atk time (EAX) -= 1 */
 	patch_mem(0x80bb370, "\x89\x45\xd0", 3); /* store it */
 	patch_mem(0x80bb373, "\xeb\x1f", 2); /* skip the rest of overritten code (assert) */
 
@@ -368,10 +448,10 @@ init(void)
 	patch_mem(0x80e3f0a, "\x89\xc7", 2); /* save player id from EAX EDI */
 	patch_mem(0x80e3f0c, "\xe8\xe7\x0f\x42\x00", 5); /* move GLog call */
 	patch_mem(0x80e3f11, "\x83\xc4\x08\x90", 4);
-	patch_mem(0x80e3ee4, "\xe8\x03", 2); /* increase load limit 2x */
+	patch_mem(0x80e3ee5, "\x88\x13", 2); /* increase load limit 10x */
 	patch_mem(0x80e3f15, "\xff\x77\x30", 3);
 	patch_mem(0x80e3f18, "\xe8", 1);
-	patch_jmp32(0x80e3f18, hooked_on_banish);
+	patch_jmp32(0x80e3f18, (uintptr_t)hooked_on_banish);
 	patch_mem(0x80e3f1d, "\x83\xc4\x08", 3);
 	patch_mem(0x80e3f20, "\xeb\x07", 2);
 
