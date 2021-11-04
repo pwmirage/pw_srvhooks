@@ -462,6 +462,9 @@ init(void)
 	/* bump max movement speed (orig 20, it warps you if you move faster) */
 	patch_mem(0x8510660, "\xd7\x83\x47\x44", 4);
 
+	/* don't require teles to use WC */
+	patch_mem(0x8080f44, "\xe9\x83\x00\x00\x00", 5);
+
 	hook_mirage_boss_drops();
 
 	fprintf(stderr, "gs_preload done\n");
