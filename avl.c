@@ -202,16 +202,22 @@ remove_node(struct pw_avl_node *parent, struct pw_avl_node *node)
 				tmp->left = parent->left;
 				parent = tmp;
 			} else {
+				struct pw_avl_node *tmpnext;
 				/* get the smallest number of those bigger than parent
 				 * and replace it with parent */
 				while (tmp->left) {
 					tmp = tmp->left;
 				}
 
+				/* backup and unset next to make sure the node is
+				 * really deleted */
+				tmpnext = tmp->next;
+				tmp->next = NULL;
+
 				parent->right = remove_node(parent->right, tmp);
 				tmp->left = parent->left;
 				tmp->right = parent->right;
-				tmp->next = parent->next;
+				tmp->next = tmpnext;
 				parent = tmp;
 			}
 		}
