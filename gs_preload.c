@@ -479,7 +479,7 @@ init(void)
 	patch_mem(0x80e3f0a, "\x89\xc7", 2); /* save player id from EAX EDI */
 	patch_mem(0x80e3f0c, "\xe8\xe7\x0f\x42\x00", 5); /* move GLog call */
 	patch_mem(0x80e3f11, "\x83\xc4\x08\x90", 4);
-	patch_mem(0x80e3ee5, "\x88\x13", 2); /* increase load limit 10x */
+	patch_mem(0x80e3ee5, "\x4c\x1d", 2); /* increase load limit 10x */
 	patch_mem(0x80e3f15, "\xff\x77\x30", 3);
 	patch_mem(0x80e3f18, "\xe8", 1);
 	patch_jmp32(0x80e3f18, (uintptr_t)hooked_on_banish);
