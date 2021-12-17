@@ -2,6 +2,7 @@
  * Copyright(c) 2021 Darek Stojaczyk for pwmirage.com
  */
 
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <stdio.h>
 #include <inttypes.h>
@@ -21,6 +22,7 @@
 #include <sys/mman.h>
 #include <assert.h>
 #include <math.h>
+#include <link.h>
 
 #include "common.h"
 #include "avl.h"
@@ -350,6 +352,39 @@ hooked_on_banish(int role_id)
 	system(tmp);
 }
 
+static uint32_t g_libtask_off;
+static int
+dl_phdr_cb(struct dl_phdr_info *info, size_t size, void *ctx)
+{
+	if (strstr(info->dlpi_name, "libtask.so") != NULL) {
+		g_libtask_off = info->dlpi_addr - 0x10000;
+	}
+	return 0;
+}
+
+static int g_clear_quest_children_depth;
+static void __stdcall
+hooked_clear_quest_required_item(void **_real_fn, void *this, int item_id, int count)
+{
+	void __cdecl (*real_fn)(void *this, int item_id, int count) = *_real_fn;
+
+	if (g_clear_quest_children_depth == 0) {
+		fprintf(stderr, "Removing %d x %d\n", item_id, count);
+		real_fn(this, item_id, count);
+	} else {
+		fprintf(stderr, "Not Removing %d x %d\n", item_id, count);
+	}
+}
+
+static void __cdecl (*org_clear_quest_children)(void *unk1, void *unk2, void *unk3);
+static void __cdecl
+hooked_clear_quest_children(void *unk1, void *unk2, void *unk3)
+{
+	g_clear_quest_children_depth++;
+	org_clear_quest_children(unk1, unk2, unk3);
+	g_clear_quest_children_depth--;
+}
+
 extern char **environ;
 
 static void
@@ -464,6 +499,16 @@ init(void)
 
 	/* don't require teles to use WC */
 	patch_mem(0x8080f44, "\xe9\x83\x00\x00\x00", 5);
+
+	/* libtask hooking */
+	dl_iterate_phdr(dl_phdr_cb, NULL);
+
+	/* don't remove items-to-acquire for quests you don't complete directly
+	 * - e.g. when there's a choice to complete just one of multiple */
+	patch_mem(g_libtask_off + 0x209e6, "\x52\xe8\x00\x00\x00\x00\x58", 7);
+	patch_jmp32(g_libtask_off + 0x209e6 + 1, (uintptr_t)hooked_clear_quest_required_item);
+	org_clear_quest_children = (void *)(g_libtask_off + 0x1f124);
+	trampoline_fn((void **)&org_clear_quest_children, 7, hooked_clear_quest_children);
 
 	hook_mirage_boss_drops();
 
