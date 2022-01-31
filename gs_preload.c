@@ -509,6 +509,7 @@ init(void)
 	patch_jmp32(g_libtask_off + 0x209e6 + 1, (uintptr_t)hooked_clear_quest_required_item);
 	org_clear_quest_children = (void *)(g_libtask_off + 0x1f124);
 	trampoline_fn((void **)&org_clear_quest_children, 7, hooked_clear_quest_children);
+	patch_mem(g_libtask_off + 0x1a28c, "\x90\x90", 2);
 
 	hook_mirage_boss_drops();
 
