@@ -1,18 +1,14 @@
-OBJECTS = avl.o cjson.o common.o
-ALL_OBJECTS := $(OBJECTS) gs_preload.o
-CFLAGS := -O0 -g -MD -MP -fPIC -m32 -masm=intel -fno-strict-aliasing -Wall -Wno-format-truncation $(CFLAGS)
+TARGETS = gamedbd gs
+MAKEFLAGS += --no-print-directory
 
-$(shell mkdir -p build &>/dev/null)
+all: $(TARGETS) dummy
 
-all: build/gs_preload.so
+.PHONY: dummy
 
-clean:
-	rm -f $(ALL_OBJECTS:%.o=build/%.o) $(ALL_OBJECTS:%.o=build/%.d)
+$(TARGETS): dummy
+	@if [ "$(MAKECMDGOALS)" = "all" ] || [ "$(MAKECMDGOALS)" = "" ]; then \
+		echo "$$ make $@:"; \
+	fi
+	@cd $@ && $(MAKE)
 
-build/gs_preload.so: $(OBJECTS:%.o=build/%.o) build/gs_preload.o
-	gcc-5 -shared $(CFLAGS) -o $@ $^
-
-build/%.o: %.c
-	gcc-5 $(CFLAGS) -c -o $@ $<
-
--include $(ALL_OBJECTS:%.o=build/%.d)
+dummy:

@@ -1,0 +1,17 @@
+stdin = 0x82614dc;
+stdout = 0x82614e0;
+stderr = 0x82614e4;
+fprintf = 0x81b43c4;
+fwrite = 0x81b5428;
+__assert_fail = 0x819f890;
+calloc = 0x81bd2f8;
+free = 0x81be580;
+memcpy = 0x81c1c60;
+memset = 0x81c1a80;
+mprotect = 0x81cd550;
+strlen = 0x81c1310;
+strstr = 0x81c167c;
+vsnprintf = 0x81b8230;
+vfprintf = 0x81acee0;
+strcmp = 0x81c1148;
+strtoll = 0x81a46c4;
