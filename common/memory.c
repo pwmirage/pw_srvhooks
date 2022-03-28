@@ -56,7 +56,9 @@ mem_alloc(int size)
 #ifdef __MINGW32__
 	return VirtualAlloc(NULL, (size + 0xFFF) & ~0xFFF, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 #else
-	return calloc(1, (size + 0xFFF) & ~0xFFF);
+	void *ret;
+	int rc = posix_memalign(&ret, (size + 0xFFF) & ~0xFFF, 0x1000);
+	return rc ? NULL : ret;
 #endif
 }
 
