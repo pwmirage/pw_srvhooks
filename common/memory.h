@@ -34,6 +34,20 @@ extern "C" {
 #include <inttypes.h>
 #include <stdbool.h>
 
+enum patch_mem_type {
+	PATCH_MEM_T_RAW,
+	PATCH_MEM_T_TRAMPOLINE,
+	PATCH_MEM_T_TRAMPOLINE_FN
+};
+
+struct patch_mem_t {
+	enum patch_mem_type type;
+    uintptr_t addr;
+    int replaced_bytes;
+    char asm_code[0x1000];
+	struct patch_mem_t *next;
+};
+
 void patch_mem(uintptr_t addr, const char *buf, unsigned num_bytes);
 void patch_mem_u32(uintptr_t addr, uint32_t u32);
 void patch_mem_u16(uintptr_t addr, uint16_t u16);
@@ -51,9 +65,9 @@ void _patch_mem_unsafe(uintptr_t addr, const char *buf, unsigned num_bytes);
 void _patch_mem_u32_unsafe(uintptr_t addr, uint32_t u32);
 void _patch_jmp32_unsafe(uintptr_t addr, uintptr_t fn);
 
-void trampoline_fn_static_add(void **orig_fn, int replaced_bytes, void *fn);
-void trampoline_static_add(uintptr_t addr, int replaced_bytes, const char *asm_fmt, ...);
-void patch_mem_static_add(uintptr_t addr, int replaced_bytes, const char *asm_fmt, ...);
+void trampoline_fn_static_add(struct patch_mem_t *t, void **orig_fn, int replaced_bytes, void *fn);
+void trampoline_static_add(struct patch_mem_t *t, uintptr_t addr, int replaced_bytes, const char *asm_fmt, ...);
+void patch_mem_static_add(struct patch_mem_t *t, uintptr_t addr, int replaced_bytes, const char *asm_fmt, ...);
 void patch_mem_static_init(void);
 
 #define _COMMON_JOIN2(a, b) a ## _ ## b
@@ -62,28 +76,32 @@ void patch_mem_static_init(void);
 #define TRAMPOLINE_ORG "call org"
 #define TRAMPOLINE(addr_p, replaced_bytes_p, ...) \
 static void __attribute__((constructor)) COMMON_UNIQUENAME(init_trampoline_)(void) { \
-    trampoline_static_add(addr_p, replaced_bytes_p, __VA_ARGS__); \
+    static struct patch_mem_t t; \
+    trampoline_static_add(&t, addr_p, replaced_bytes_p, __VA_ARGS__); \
 }
 
 #define TRAMPOLINE_FN(fn_p, replaced_bytes_p, ...) \
 static void __attribute__((constructor)) COMMON_UNIQUENAME(init_trampoline_)(void) { \
-    trampoline_fn_static_add((void **)fn_p, replaced_bytes_p, __VA_ARGS__); \
+    static struct patch_mem_t t; \
+    trampoline_fn_static_add(&t, (void **)fn_p, replaced_bytes_p, __VA_ARGS__); \
 }
 
 #define PATCH_MEM(addr_p, replaced_bytes_p, ...) \
 static void __attribute__((constructor)) COMMON_UNIQUENAME(init_patch_mem_)(void) { \
-    patch_mem_static_add(addr_p, replaced_bytes_p, __VA_ARGS__); \
+    static struct patch_mem_t t; \
+    patch_mem_static_add(&t, addr_p, replaced_bytes_p, __VA_ARGS__); \
 }
 
 #define PATCH_JMP32(addr_p, fn_p) \
 static void __attribute__((constructor)) COMMON_UNIQUENAME(init_patch_jmp_)(void) { \
+    static struct patch_mem_t t; \
     char tmp[16]; \
     if (*(unsigned char *)(uintptr_t)addr_p == 0xe8) { \
-        _snprintf(tmp, sizeof(tmp), "call 0x%x", (uintptr_t)fn_p); \
+        snprintf(tmp, sizeof(tmp), "call 0x%x", (uintptr_t)fn_p); \
     } else { \
-        _snprintf(tmp, sizeof(tmp), "jmp 0x%x", (uintptr_t)fn_p); \
+        snprintf(tmp, sizeof(tmp), "jmp 0x%x", (uintptr_t)fn_p); \
     } \
-    patch_mem_static_add(addr_p, 5, tmp); \
+    patch_mem_static_add(&t, addr_p, 5, tmp); \
 }
 
 #ifdef __cplusplus

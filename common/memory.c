@@ -36,8 +36,6 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
-
-
 struct mem_region_4kb {
 	char data[4096];
 	/* which bytes were overwritten */
@@ -49,20 +47,6 @@ struct mem_region_1mb {
 };
 
 struct mem_region_1mb *g_mem_map[4096];
-
-enum patch_mem_type {
-	PATCH_MEM_T_RAW,
-	PATCH_MEM_T_TRAMPOLINE,
-	PATCH_MEM_T_TRAMPOLINE_FN
-};
-
-struct patch_mem_t {
-	enum patch_mem_type type;
-    uintptr_t addr;
-    int replaced_bytes;
-    char asm_code[0x1000];
-	struct patch_mem_t *next;
-};
 
 static struct patch_mem_t *g_static_patches;
 
@@ -417,17 +401,10 @@ assemble_trampoline(uintptr_t addr, int replaced_bytes,
 }
 
 void
-trampoline_fn_static_add(void **orig_fn, int replaced_bytes, void *fn)
+trampoline_fn_static_add(struct patch_mem_t *t, void **orig_fn, int replaced_bytes, void *fn)
 {
-	struct patch_mem_t *t;
 
 	assert(replaced_bytes >= 5 && replaced_bytes <= 64);
-	t = calloc(1, sizeof(*t));
-	if (!t) {
-		MessageBox(NULL, "malloc failed", "Status", MB_OK);
-		assert(false);
-		return;
-	}
 
 	t->type = PATCH_MEM_T_TRAMPOLINE_FN;
 	t->addr = (uintptr_t)(void *)orig_fn;
@@ -439,19 +416,12 @@ trampoline_fn_static_add(void **orig_fn, int replaced_bytes, void *fn)
 }
 
 void
-trampoline_static_add(uintptr_t addr, int replaced_bytes, const char *asm_fmt, ...)
+trampoline_static_add(struct patch_mem_t *t, uintptr_t addr, int replaced_bytes, const char *asm_fmt, ...)
 {
-	struct patch_mem_t *t;
 	va_list args;
 	char *c;
 
 	assert(replaced_bytes >= 5 && replaced_bytes <= 64);
-	t = calloc(1, sizeof(*t));
-	if (!t) {
-		MessageBox(NULL, "malloc failed", "Status", MB_OK);
-		assert(false);
-		return;
-	}
 
 	t->type = PATCH_MEM_T_TRAMPOLINE;
 	t->addr = addr;
@@ -474,18 +444,10 @@ trampoline_static_add(uintptr_t addr, int replaced_bytes, const char *asm_fmt, .
 }
 
 void
-patch_mem_static_add(uintptr_t addr, int replaced_bytes, const char *asm_fmt, ...)
+patch_mem_static_add(struct patch_mem_t *t, uintptr_t addr, int replaced_bytes, const char *asm_fmt, ...)
 {
-	struct patch_mem_t *t;
 	va_list args;
 	char *c;
-
-	t = calloc(1, sizeof(*t));
-	if (!t) {
-		MessageBox(NULL, "malloc failed", "Status", MB_OK);
-		assert(false);
-		return;
-	}
 
 	t->type = PATCH_MEM_T_RAW;
 	t->addr = addr;
@@ -560,7 +522,6 @@ patch_mem_static_init(void)
 
 	while (p) {
 		process_static_patch_mem(p);
-		free(p);
 		p = p->next;
 	}
 }
