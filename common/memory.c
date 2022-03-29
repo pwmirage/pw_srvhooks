@@ -561,7 +561,7 @@ restore_mem(void)
 }
 
 int
-split_string_to_words(char *input, char split_by, char **argv, int *argc)
+split_string_to_words(char *input, const char *split_by, char **argv, int *argc)
 {
     char *c, *start;
 	int cur_argc = 0;
@@ -581,7 +581,7 @@ split_string_to_words(char *input, char split_by, char **argv, int *argc)
 
     c = start = input;
     while (*c) {
-        if (*c == split_by) {
+        if (strchr(split_by, *c) != NULL) {
             NEW_WORD();
         }
         c++;
@@ -621,7 +621,6 @@ get_reg_idx(const char *name)
 		}
 	}
 
-	assert(false);
 	return -1;
 }
 
@@ -634,49 +633,85 @@ assemble_x86(uint32_t addr, char *in, unsigned char **out)
 	int instruction_cnt = sizeof(instruction_arr) / sizeof(instruction_arr[0]);
 	int i, rc;
 
-	rc = split_string_to_words(in, ';', instruction_arr, &instruction_cnt);
+	rc = split_string_to_words(in, ";", instruction_arr, &instruction_cnt);
 	if (rc != 0) {
 		return rc;
 	}
 
 	for (i = 0; i < instruction_cnt; i++) {
 		char *ins_s = instruction_arr[i];
-		char *parts[3] = {};
-		int opcount = 3;
-		char *ins, *op1, *op2;
+		char *parts[8] = {};
+		int opcount = 8;
+		char *ins, **ops;
 
-		rc = split_string_to_words(ins_s, ' ', parts, &opcount);
+		rc = split_string_to_words(ins_s, " [],", parts, &opcount);
 		if (rc != 0 || opcount == 0) {
 			continue;
 		}
 
 		ins = parts[0];
-		op1 = parts[1];
-		op2 = parts[2];
 
-		if (strcmp(ins, "push") == 0) {
-			assert(opcount == 2);
-			*o++ = (unsigned char)(0x50 + get_reg_idx(op1));
+		ops = parts + 1;
+		opcount--;
+
+		if (strcmp(ins, "ret") == 0) {
+			assert(opcount == 0);
+			*o++ = (unsigned char)0xc3;
 			addr++;
+		} else if (strcmp(ins, "push") == 0) {
+			assert(opcount == 1);
+			*o++ = (unsigned char)(0x50 + get_reg_idx(ops[0]));
+			addr++;
+		} else if (strcmp(ins, "lea") == 0) {
+			assert(opcount == 4);
+			char dst_reg = get_reg_idx(ops[0]);
+			char src_reg = get_reg_idx(ops[1]);
+			char *sign_str = ops[2];
+			char src_off = strtol(ops[3], NULL, 0);
+
+			assert(dst_reg >= 0);
+			assert(src_reg >= 0);
+			assert(strlen(sign_str) == 1 && (sign_str[0] == '+' || sign_str[0] == '-'));
+			assert(src_off > 0 && src_off < 128); /* technically it can be -128; ignore it */
+
+			*o++ = (unsigned char)0x8d;
+			*o++ = (unsigned char)(0x40 + dst_reg * 8 + src_reg);
+			if (sign_str[0] == '+') {
+				*o++ = (unsigned char)src_off;
+			} else {
+				*o++ = (unsigned char)(0x100 - src_off);
+			}
+			addr += 3;
 		} else if (strcmp(ins, "call") == 0 || strcmp(ins, "jmp") == 0) {
 			union {
 				unsigned char c[4];
 				uint32_t u;
 			} u;
 
-			assert(opcount == 2);
-			u.u = strtoll(op1, NULL, 16) - addr - 5;
-
-			if (strcmp(ins, "call") == 0) {
-				*o++ = (unsigned char)0xe8;
+			assert(opcount == 1);
+			char reg = get_reg_idx(ops[0]);
+			if (reg >= 0) {
+				*o++ = (unsigned char)0xff;
+				if (strcmp(ins, "call") == 0) {
+					*o++ = (unsigned char)(0xd0 + reg);
+				} else {
+					*o++ = (unsigned char)(0xe0 + reg);
+				}
+				addr += 2;
 			} else {
-				*o++ = (unsigned char)0xe9;
+				u.u = strtol(ops[0], NULL, 16) - addr - 5;
+
+				if (strcmp(ins, "call") == 0) {
+					*o++ = (unsigned char)0xe8;
+				} else {
+					*o++ = (unsigned char)0xe9;
+				}
+				*o++ = u.c[0];
+				*o++ = u.c[1];
+				*o++ = u.c[2];
+				*o++ = u.c[3];
+				addr += 5;
 			}
-			*o++ = u.c[0];
-			*o++ = u.c[1];
-			*o++ = u.c[2];
-			*o++ = u.c[3];
-			addr += 5;
 		}
 	}
 

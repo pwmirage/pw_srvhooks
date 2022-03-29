@@ -48,6 +48,8 @@ struct patch_mem_t {
 	struct patch_mem_t *next;
 };
 
+int split_string_to_words(char *input, const char *split_by, char **argv, int *argc);
+
 void patch_mem(uintptr_t addr, const char *buf, unsigned num_bytes);
 void patch_mem_u32(uintptr_t addr, uint32_t u32);
 void patch_mem_u16(uintptr_t addr, uint16_t u16);
