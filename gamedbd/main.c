@@ -162,6 +162,31 @@ hooked_build_friend_info(void *info, struct octet_stream *stream)
 
 TRAMPOLINE_FN(&pw_build_friend_info, 6, hooked_build_friend_info);
 
+static uintptr_t __stdcall
+hooked_update_user_faction_info(void *user_faction_info, void *update_msg)
+{
+	uint8_t operation = *(uint8_t *)(update_msg + 0xc);
+	struct octets *msg_nickname = update_msg + 0x10;
+
+	if (operation == 0) {
+		return 0x8081968;
+	} else if (operation == 1) {
+		struct octets *fac_nickname = user_faction_info + 0x20;
+
+		octets_copy(fac_nickname, msg_nickname);
+	} else if (operation == 2) {
+		struct octets *fac_username = user_faction_info + 0x8;
+
+		octets_copy(fac_username, msg_nickname);
+	}
+
+	return 0x80822fe;
+}
+
+PATCH_MEM(0x8081944, 22,
+	"push eax; lea eax, [ebp - 0x58]; push eax; call 0x%x; jmp eax;",
+	hooked_update_user_faction_info);
+
 void __cdecl (*pw_setprogname)(char *name) = (void *)0x8146814;
 
 static void __attribute__((constructor))
