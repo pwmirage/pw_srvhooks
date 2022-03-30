@@ -1,4 +1,4 @@
-TARGETS = gamedbd gs
+TARGETS = gamedbd gdeliveryd gs
 MAKEFLAGS += --no-print-directory
 
 all: $(TARGETS) dummy
