@@ -187,6 +187,10 @@ PATCH_MEM(0x8081944, 22,
 	"push eax; lea eax, [ebp - 0x58]; push eax; call 0x%x; jmp eax;",
 	hooked_update_user_faction_info);
 
+/* continue renaming even if old name doesn't match */
+PATCH_MEM(0x80790a0, 10,
+	"jmp 0x807922c;");
+
 void __cdecl (*pw_setprogname)(char *name) = (void *)0x8146814;
 
 static void __attribute__((constructor))
